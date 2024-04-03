@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+
+	"github.com/traefik/traefik/v3/pkg/tracing"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config the plugin configuration.
@@ -61,7 +64,21 @@ func (a *Demo) addForwardHeader(forwardRequest *http.Request) error {
 		return err
 	}
 
+	var authSpan trace.Span
+	var tracer *tracing.Tracer
+	if tracer = tracing.TracerFromContext(forwardRequest.Context()); tracer != nil {
+		var tracingCtx context.Context
+		tracingCtx, authSpan = tracer.Start(forwardRequest.Context(), "AuthRequest", trace.WithSpanKind(trace.SpanKindClient))
+		defer authSpan.End()
+
+		authRequest = authRequest.WithContext(tracingCtx)
+
+		tracing.InjectContextIntoCarrier(authRequest)
+		tracer.CaptureClientRequest(authSpan, authRequest)
+	}
+
 	authRequest.AddCookie(authCookie)
+
 	authResponse, err := a.client.Do(authRequest)
 	if err != nil {
 		return err
