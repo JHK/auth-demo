@@ -1,12 +1,12 @@
-displayName: Demo Plugin
+displayName: Auth Demo
 type: middleware
 iconPath: .assets/icon.png
 
-import: github.com/traefik/plugindemo
+import: github.com/JHK/auth-demo
 
-summary: '[Demo] Add Request Header'
+summary: '[Demo] Perform Authentication Request'
 
 testData:
-  Headers:
-    X-Demo: test
-    X-URL: '{{URL}}'
+  auth_target: http://host.docker.internal:8080/auth
+  auth_cookie: login
+  forward_header: X-Auth-Token

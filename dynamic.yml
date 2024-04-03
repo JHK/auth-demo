@@ -1,0 +1,26 @@
+# Dynamic configuration
+
+http:
+  routers:
+    default-router:
+      rule: PathPrefix(`/`)
+      service: default-service
+      entryPoints:
+        - web
+      middlewares:
+        - demo-auth
+
+  services:
+    default-service:
+      loadBalancer:
+        passHostHeader: false
+        servers:
+          - url: http://example.com/
+
+  middlewares:
+    demo-auth:
+      plugin:
+        auth-demo:
+          auth_target: http://host.docker.internal:8080/auth
+          auth_cookie: login
+          forward_header: X-Auth-Token

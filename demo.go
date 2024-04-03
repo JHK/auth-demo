@@ -1,66 +1,73 @@
-// Package plugindemo a demo plugin.
-package plugindemo
+// Package authdemo a demo plugin.
+package auth_demo
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net/http"
-	"text/template"
+	"os"
 )
 
 // Config the plugin configuration.
 type Config struct {
-	Headers map[string]string `json:"headers,omitempty"`
+	AuthTarget    string `json:"auth_target,omitempty"`
+	AuthCookie    string `json:"auth_cookie,omitempty"`
+	ForwardHeader string `json:"forward_header,omitempty"`
 }
 
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		Headers: make(map[string]string),
+		AuthTarget:    "http://host.docker.internal:8080/auth",
+		AuthCookie:    "login",
+		ForwardHeader: "X-Auth-Token",
 	}
 }
 
 // Demo a Demo plugin.
 type Demo struct {
-	next     http.Handler
-	headers  map[string]string
-	name     string
-	template *template.Template
+	client *http.Client
+	config *Config
+	name   string
+	next   http.Handler
 }
 
 // New created a new Demo plugin.
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	if len(config.Headers) == 0 {
-		return nil, fmt.Errorf("headers cannot be empty")
-	}
-
 	return &Demo{
-		headers:  config.Headers,
-		next:     next,
-		name:     name,
-		template: template.New("demo").Delims("[[", "]]"),
+		client: &http.Client{},
+		config: config,
+		name:   name,
+		next:   next,
 	}, nil
 }
 
 func (a *Demo) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	for key, value := range a.headers {
-		tmpl, err := a.template.Parse(value)
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	err := a.addForwardHeader(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	}
+	a.next.ServeHTTP(rw, req)
+}
 
-		writer := &bytes.Buffer{}
-
-		err = tmpl.Execute(writer, req)
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		req.Header.Set(key, writer.String())
+func (a *Demo) addForwardHeader(forwardRequest *http.Request) error {
+	authCookie, err := forwardRequest.Cookie(a.config.AuthCookie)
+	if err != nil {
+		return err
 	}
 
-	a.next.ServeHTTP(rw, req)
+	authRequest, err := http.NewRequest("GET", a.config.AuthTarget, nil)
+	if err != nil {
+		return err
+	}
+
+	authRequest.AddCookie(authCookie)
+	authResponse, err := a.client.Do(authRequest)
+	if err != nil {
+		return err
+	}
+
+	forwardRequest.Header.Add(a.config.ForwardHeader, authResponse.Status)
+
+	return nil
 }
